@@ -55,7 +55,7 @@ inline std::size_t checked_multiply(std::size_t left, std::size_t right) {
     return left * right;
 }
 
-inline constexpr std::int64_t kGapScore = -2;
+inline constexpr std::int64_t kGapScore = -4;
 
 // A path consumes at most center + query residues. Bound its score using
 // the largest absolute step score before converting lengths to signed scores.

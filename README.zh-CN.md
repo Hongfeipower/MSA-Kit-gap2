@@ -199,7 +199,7 @@ MSA-Kit 会在成功写出前检查这些性质，说明程序保留了要求的
 
 ## 8. 从这个程序开始开发自己的算法
 
-完成上面的练习后，打开 [src/align.cpp](src/align.cpp)，找到 **Reference star alignment — replaceable core** 标记。附带算法选择第一条序列为中心，用 Needleman–Wunsch 做全局两两对齐，再合并中心的插入槽。
+完成上面的练习后，打开 [src/align.cpp](src/align.cpp)，找到 **Reference star alignment — replaceable core** 标记。算法选择第一条序列为中心，用 Needleman–Wunsch 做全局两两对齐，再合并插入槽生成初始比对。随后对每个非中心行，用其他行的列计数精修一次。
 
 本例 A、C 之间需要容纳最长插入 GG，所以槽宽为 2；q1 的 T 左对齐得到 AT-C。核心使用完整动态规划表，适合学习和小型检查，长输入可能有较大时间和内存代价。
 

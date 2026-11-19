@@ -15,7 +15,7 @@
 namespace {
 using msakit::Alignment;
 using msakit::SequenceRecord;
-constexpr int kExpectedGapScore = -2;
+constexpr int kExpectedGapScore = -4;
 
 std::vector<SequenceRecord> records(std::initializer_list<std::string> sequences) {
     std::vector<SequenceRecord> result;
@@ -103,6 +103,25 @@ TEST_CASE("reference star merges a shared slot with right padding" * doctest::te
     CHECK(output.rows == std::vector<std::string>{"A--C", "AT-C", "AGGC"});
     msakit::detail::validate_alignment(input, output);
     CHECK(msakit::align(input).rows == output.rows);
+}
+
+TEST_CASE("profile support improves a non-center placement" * doctest::test_suite("reference")) {
+    const auto input = records({"AC", "AG", "ATGC", "ATGC"});
+    // The star alignment puts the G in AG under the center's C. The two
+    // ATGC rows together favor moving it one column to align with their G.
+    const auto output = msakit::align(input);
+    CHECK(output.rows == std::vector<std::string>{"A--C", "A-G-", "ATGC", "ATGC"});
+    msakit::detail::validate_alignment(input, output);
+    CHECK(msakit::align(input).rows == output.rows);
+}
+
+TEST_CASE("profile refinement removes columns vacated by every row" * doctest::test_suite("reference")) {
+    const auto input = records({"GA", "GCGCGC", "AGGAGCG", "GAGGAAC"});
+    // The star merge has ten columns. After refinement, two columns contain
+    // only gaps and are removed from every row together.
+    const auto output = msakit::align(input);
+    CHECK(output.rows == std::vector<std::string>{"---GA---", "GC-GCGC-", "-AGGAGCG", "GAGGAAC-"});
+    msakit::detail::validate_alignment(input, output);
 }
 
 TEST_CASE("prefix suffix insertion and center deletion preserve every residue" * doctest::test_suite("reference")) {

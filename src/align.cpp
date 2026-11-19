@@ -2,7 +2,9 @@
 #include "msakit/core.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <limits>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -104,6 +106,130 @@ Projection align_pair(std::string_view center, std::string_view query) {
     }
     return projection;
 }
+
+constexpr std::string_view kProfileSymbols = "ACGTUN-";
+constexpr auto kProfileGap = kProfileSymbols.size() - 1;
+constexpr Score kProfileGapScore = -2;
+using ColumnProfile = std::array<Score, kProfileSymbols.size()>;
+constexpr std::size_t kRefinementRadius = 4;
+constexpr std::size_t kRefinementBandWidth = 2 * kRefinementRadius + 1;
+constexpr Score kUnreachable = std::numeric_limits<Score>::min();
+
+Score placement_gain(char residue, const ColumnProfile& profile) {
+    // Compare placing this residue with leaving a gap in this column.
+    Score gain = kProfileGapScore * profile[kProfileGap];
+    for (std::size_t symbol = 0; symbol < kProfileGap; ++symbol) {
+        gain += (substitution(residue, kProfileSymbols[symbol]) - kProfileGapScore) *
+                profile[symbol];
+    }
+    return gain;
+}
+
+struct RefinementStep {
+    Score score = kUnreachable;
+    std::size_t predecessor = 0;
+};
+
+struct RefinementBand {
+    std::size_t first;
+    std::size_t last;
+    std::array<RefinementStep, kRefinementBandWidth> steps{};
+};
+
+void refine_row(std::string_view sequence, std::string& row,
+                const std::vector<ColumnProfile>& profile) {
+    if (sequence.size() > std::vector<RefinementBand>().max_size()) {
+        throw detail::Error(detail::kCoreError, "refinement matrix exceeds container size");
+    }
+    std::vector<RefinementBand> bands;
+    bands.reserve(sequence.size());
+    Score original_score = 0;
+    for (std::size_t column = 0; column < row.size(); ++column) {
+        if (row[column] == '-') continue;
+        original_score += placement_gain(row[column], profile[column]);
+        // Form the band without unsigned underflow or overflow at the ends.
+        const auto first = column - std::min(column, kRefinementRadius);
+        const auto last = column + std::min(row.size() - 1 - column, kRefinementRadius);
+        bands.push_back({first, last});
+    }
+
+    for (std::size_t residue = 0; residue < sequence.size(); ++residue) {
+        auto& band = bands[residue];
+        Score best_prefix = residue == 0 ? 0 : kUnreachable;
+        std::size_t best_predecessor = 0;
+        std::size_t next_predecessor = 0;
+        for (std::size_t column = band.first; column <= band.last; ++column) {
+            if (residue != 0) {
+                const auto& previous = bands[residue - 1];
+                // Scan strictly earlier columns, retaining the first column on ties.
+                while (next_predecessor <= previous.last - previous.first &&
+                       previous.first + next_predecessor < column) {
+                    const auto previous_score = previous.steps[next_predecessor].score;
+                    if (previous_score > best_prefix) {
+                        best_prefix = previous_score;
+                        best_predecessor = next_predecessor;
+                    }
+                    ++next_predecessor;
+                }
+            }
+            if (best_prefix != kUnreachable) {
+                band.steps[column - band.first] = {
+                    best_prefix + placement_gain(sequence[residue], profile[column]),
+                    best_predecessor};
+            }
+        }
+    }
+
+    const auto& last_steps = bands.back().steps;
+    const auto best = std::max_element(last_steps.begin(), last_steps.end(),
+        [](const auto& a, const auto& b) { return a.score < b.score; });
+    if (best->score <= original_score) return;
+    auto offset = static_cast<std::size_t>(best - last_steps.begin());
+    std::fill(row.begin(), row.end(), '-');
+    for (std::size_t end = sequence.size(); end != 0; --end) {
+        const auto index = end - 1;
+        const auto& band = bands[index];
+        row[band.first + offset] = sequence[index];
+        offset = band.steps[offset].predecessor;
+    }
+}
+
+void refine_profile(const std::vector<SequenceRecord>& input, Alignment& alignment) {
+    const auto width = alignment.rows.front().size();
+    // Every placement contributes at most three points per other row in
+    // absolute value. A candidate places at most width residues.
+    constexpr auto limit = static_cast<std::uint64_t>(std::numeric_limits<Score>::max() / 3);
+    if (alignment.rows.size() - 1 > limit / width) {
+        throw detail::Error(detail::kCoreError, "refinement score exceeds signed range");
+    }
+    if (width > std::vector<ColumnProfile>().max_size()) {
+        throw detail::Error(detail::kCoreError, "refinement profile exceeds container size");
+    }
+    std::vector<ColumnProfile> profile(width);
+    const auto update_profile = [&](const std::string& row, Score count) {
+        for (std::size_t column = 0; column < width; ++column) {
+            profile[column][kProfileSymbols.find(row[column])] += count;
+        }
+    };
+    for (const auto& row : alignment.rows) update_profile(row, 1);
+
+    for (std::size_t i = 1; i < alignment.rows.size(); ++i) {
+        auto& row = alignment.rows[i];
+        if (input[i].sequence.size() == width) continue;
+        update_profile(row, -1);
+        refine_row(input[i].sequence, row, profile);
+        update_profile(row, 1);
+    }
+
+    const auto row_count = static_cast<Score>(alignment.rows.size());
+    for (auto& row : alignment.rows) {
+        std::size_t kept = 0;
+        for (std::size_t column = 0; column < width; ++column) {
+            if (profile[column][kProfileGap] != row_count) row[kept++] = row[column];
+        }
+        row.resize(kept);
+    }
+}
 }  // namespace
 
 // Reference star alignment — replaceable core
@@ -163,6 +289,7 @@ Alignment align(const std::vector<SequenceRecord>& input) {
             }
         }
     }
+    refine_profile(input, result);
     return result;
 }
 }  // namespace msakit

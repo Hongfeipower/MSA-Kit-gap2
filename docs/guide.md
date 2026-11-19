@@ -105,9 +105,11 @@ For website submission, follow the separate [Benchmark integration tutorial](../
 
 ## 6. Reference star alignment
 
-The source is marked **Reference star alignment — replaceable core**. Sequence 0 is the center. Each remaining sequence is globally aligned to it with Needleman–Wunsch. Match scores +1, mismatch -1, each gap -2. Any pair containing N scores 0, including N/N; T/U match for scoring while their output characters stay unchanged.
+The source is marked **Reference star alignment — replaceable core**. Sequence 0 is the center. The initial Needleman–Wunsch pairwise alignments use match +1, mismatch -1, and gap -4. A residue pair containing N scores 0, including N/N. T/U match for scoring, and the output preserves the original characters.
 
-Tie order is diagonal, consume center only, then consume query only. A center of length L has L+1 insertion slots, including prefix/suffix. Each slot takes the maximum insertion length across queries. Insertions are left-aligned and right-padded; the center receives gaps in slots. Insertions are not realigned to each other.
+Tie order is diagonal, consume center only, then consume query only. A center of length L has L+1 insertion slots, including prefix/suffix. Each slot takes the maximum insertion length across queries. The merge left-aligns insertions, pads them on the right, and fills the center's insertion slots with gaps.
+
+A [profile refinement pass](design.md#profile-refinement) then revisits each non-center row. In that pass, a residue may move up to four columns if the resulting row strictly improves the total pair score against the other rows. The pass scores residue–gap pairs at -2 and removes empty columns at the end.
 
 ```fasta
 >center

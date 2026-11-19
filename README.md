@@ -199,7 +199,7 @@ The supplied project registers four CTest entries. A successful complete run rep
 
 ## 8. Develop an algorithm inside this program
 
-After completing the exercise, open [src/align.cpp](src/align.cpp) and find **Reference star alignment — replaceable core**. The supplied algorithm chooses the first sequence as the center, uses Needleman–Wunsch global pairwise alignment, and merges insertions around that center.
+After completing the exercise, open [src/align.cpp](src/align.cpp) and find **Reference star alignment — replaceable core**. The algorithm builds an initial star alignment by aligning each sequence to the first with Needleman–Wunsch and merging insertions around that center. It then refines each non-center row against the other aligned rows using their column counts.
 
 In the example, the slot between A and C needs room for GG, so its width is two. q1's T is left-aligned there to give AT-C. The core stores full dynamic-programming tables: it is useful for learning and small checks, but long inputs can have substantial time and memory cost.
 

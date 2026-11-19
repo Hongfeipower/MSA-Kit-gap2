@@ -366,21 +366,20 @@ For center `c` and query `q`, substitution scoring is defined in this order:
 2. If characters are equal, or are the pair `T`/`U`, score +1.
 3. Otherwise score -1.
 
-Every gap character scores -2, including terminal gaps. There is no local
-clipping, free-end gap, affine-gap option, or reverse-complement search. T/U
-equivalence changes only scoring; the aligned strings retain their original
-cleaned `T` or `U` characters.
+Every gap character in the starting pairwise alignments scores -4, including
+terminal gaps. T/U equivalence affects scoring, and the aligned strings retain
+their original cleaned `T` or `U` characters.
 
 Let `i` and `j` be the numbers of consumed center and query characters:
 
 ```text
 D(0, 0) = 0
-D(i, 0) = -i
-D(0, j) = -j
+D(i, 0) = -4i
+D(0, j) = -4j
 D(i, j) = max(
     D(i-1, j-1) + substitution(c[i-1], q[j-1]),
-    D(i-1, j) - 1,
-    D(i, j-1) - 1
+    D(i-1, j) - 4,
+    D(i, j-1) - 4
 )
 ```
 
@@ -413,19 +412,30 @@ q1      ATC            q1      AT-C
 q2      AGGC           q2      AGGC
 ```
 
-Insertion strings sharing a slot are not aligned against one another. This is
-a deterministic teaching merge, not a claim of optimal insertion homology or
-optimal multiple sequence alignment.
+### Profile refinement
+
+Starting with the merged rows, visit each non-center row once in input order.
+Temporarily remove it from the current per-column counts. Align its residues
+to this profile in order, allowing each residue to move up to four columns in
+either direction. The profile objective sums the substitution scores across
+the other rows, with -2 for a residue paired with a gap and 0 for two gaps.
+The dynamic program keeps the earlier candidate column for tied predecessors
+or endpoints. Apply the new row only if it strictly improves this objective,
+then update the counts before moving to the next row. Delete any all-gap
+columns after the pass.
 
 ### Cost and failure boundaries
 
 Let `n` be the sequence count, `L` the center length, `m_i` each query length,
-and `W` the final alignment width. Pairwise calculation costs
-`O(L × sum(m_i))` time; construction and validation add `O(n × W)`. Process
-queries sequentially and release each pairwise DP table before the next one.
+and `W` the alignment width before refinement. Pairwise calculation costs
+`O(L × sum(m_i))` time. Construction, profile updates and validation cost
+`O(n × W)`, and the refinement dynamic programs cost `O(9 × sum(m_i))`.
+Queries are processed sequentially, releasing each pairwise DP table before
+the next query.
 The largest full DP table occupies `O((L+1) × (max(m_i)+1))` space; inputs,
-stored pairwise/slot information, and the final `O(n × W)` matrix also consume
-memory. Do not describe DP space alone as total memory use.
+stored pairwise/slot information, and the alignment's `O(n × W)` matrix also
+consume memory. The profile stores `O(W)` counts, and row refinement uses at
+most `O(9 × max(m_i))` DP cells.
 
 Use a signed score representation. Check matrix-dimension multiplication,
 score bounds, and output-length accumulation before allocation or arithmetic
